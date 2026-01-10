@@ -401,6 +401,11 @@
           "default": false,
           "description": "Enable mock backend for local verification (no server required)."
         },
+        "parallel.dev.demoMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable demo sign-in against the local hackathon backend (no OAuth)."
+        },
         "parallel.cache.maxEntitiesPerType": {
           "type": "number",
           "default": 1000,

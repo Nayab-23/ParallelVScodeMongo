@@ -616,10 +616,15 @@ async function signIn(
   viewRefresher?: ViewRefresher,
   options?: SignInOptions
 ): Promise<void> {
+  const demoEnabled = isDemoModeEnabled();
   const mockEnabled = isMockEnabled();
   const mode = options?.mode ?? 'browser';
   const apiBaseUrl = await resolveApiBaseUrl(context, options?.apiBaseUrl);
   if (!apiBaseUrl) {
+    return;
+  }
+  if (demoEnabled) {
+    await signInWithDemo(context, client, store, logger, syncService, viewRefresher, apiBaseUrl);
     return;
   }
   if (mockEnabled) {
@@ -764,6 +769,7 @@ async function openProfileMenu(
   syncService: SyncService,
   viewRefresher?: ViewRefresher
 ): Promise<void> {
+  const demoEnabled = isDemoModeEnabled();
   const items = isSignedIn
     ? [
         { label: 'Sign out', action: 'signOut' },
@@ -771,7 +777,7 @@ async function openProfileMenu(
         { label: 'Settings', action: 'settings' },
       ]
     : [
-        { label: 'Sign in with Browser', action: 'signInBrowser' },
+        { label: demoEnabled ? 'Sign in (Demo Mode)' : 'Sign in with Browser', action: 'signInBrowser' },
         { label: 'Settings', action: 'settings' },
       ];
   const pick = await vscode.window.showQuickPick(items, {
@@ -862,6 +868,33 @@ async function signInWithMock(
     'mock-token',
     bootstrap,
     { storeToken: false, authFingerprint: 'mock' }
+  );
+}
+
+async function signInWithDemo(
+  context: vscode.ExtensionContext,
+  client: ParallelClient,
+  store: Store,
+  logger: Logger,
+  syncService: SyncService,
+  viewRefresher: ViewRefresher | undefined,
+  apiBaseUrl: string
+): Promise<void> {
+  const demoToken = 'demo-token';
+  client.setApiBaseUrl(apiBaseUrl);
+  client.setToken(demoToken);
+  const bootstrap = await fetchBootstrap(client);
+  await finalizeSignIn(
+    context,
+    client,
+    store,
+    logger,
+    syncService,
+    viewRefresher,
+    apiBaseUrl,
+    demoToken,
+    bootstrap,
+    { authFingerprint: 'demo' }
   );
 }
 
@@ -3399,6 +3432,10 @@ function prettyStatus(): string {
 
 function isMockEnabled(): boolean {
   return !!vscode.workspace.getConfiguration().get<boolean>('parallel.dev.mockBackend');
+}
+
+function isDemoModeEnabled(): boolean {
+  return !!vscode.workspace.getConfiguration().get<boolean>('parallel.dev.demoMode');
 }
 
 function ensureMockBackend(): MockBackend | null {
