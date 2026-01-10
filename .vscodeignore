@@ -1,0 +1,10 @@
+node_modules/**
+.gitignore
+.eslintrc.cjs
+.prettierrc
+tsconfig.json
+tsconfig.test.json
+vitest.config.ts
+test/**
+out/**
+coverage/**

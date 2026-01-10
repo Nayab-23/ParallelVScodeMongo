@@ -1,0 +1,412 @@
+{
+  "name": "parallel-vscode",
+  "displayName": "Parallel",
+  "description": "Parallel workspace context and realtime updates inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "parallel",
+  "engines": {
+    "vscode": "^1.83.0"
+  },
+  "enabledApiProposals": [
+    "inlineCompletionsAdditions"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:parallel.signIn",
+    "onCommand:parallel.signOut",
+    "onCommand:parallel.openProfileMenu",
+    "onCommand:parallel.selectWorkspace",
+    "onCommand:parallel.forceSync",
+    "onCommand:parallel.forceFullResync",
+    "onCommand:parallel.openWebApp",
+    "onCommand:parallel.insertContextSummary",
+    "onCommand:parallel.openDetails",
+    "onCommand:parallel.search.prompt",
+    "onCommand:parallel.refreshContext",
+    "onCommand:parallel.agent.open",
+    "onCommand:parallel.toggleFullPermission",
+    "onCommand:parallel.agent.undo",
+    "onCommand:parallel.indexWorkspace",
+    "onCommand:parallel.explainSelection",
+    "onCommand:parallel.generateTests",
+    "onCommand:parallel.chat.askSelection",
+    "onCommand:parallel.inlineCompletions.showAlternatives",
+    "onCommand:parallel.cycleCompletionNext",
+    "onCommand:parallel.cycleCompletionPrevious",
+    "onUri",
+    "onView:parallelChatView",
+    "onView:parallelSearchView"
+  ],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "esbuild --bundle src/extension.ts --outfile=dist/extension.js --platform=node --external:vscode --format=cjs --sourcemap --target=ES2020",
+    "watch": "esbuild --bundle src/extension.ts --outfile=dist/extension.js --platform=node --external:vscode --format=cjs --sourcemap --target=ES2020 --watch",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package",
+    "package:dry": "vsce package --no-dependencies",
+    "prepare": "npm run build"
+  },
+  "devDependencies": {
+    "@types/eventsource": "^1.1.14",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.83.0",
+    "@typescript-eslint/eslint-plugin": "^7.17.0",
+    "@typescript-eslint/parser": "^7.17.0",
+    "esbuild": "^0.23.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.3",
+    "vitest": "^1.6.0",
+    "vsce": "^2.15.0"
+  },
+  "dependencies": {
+    "diff": "^5.2.0",
+    "eventsource": "^2.0.2"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "parallel.signIn",
+        "title": "Parallel: Sign In"
+      },
+      {
+        "command": "parallel.signOut",
+        "title": "Parallel: Sign Out"
+      },
+      {
+        "command": "parallel.openProfileMenu",
+        "title": "Parallel: Open Profile Menu"
+      },
+      {
+        "command": "parallel.selectWorkspace",
+        "title": "Parallel: Select Workspace"
+      },
+      {
+        "command": "parallel.forceSync",
+        "title": "Parallel: Force Sync"
+      },
+      {
+        "command": "parallel.forceFullResync",
+        "title": "Parallel: Force Full Resync"
+      },
+      {
+        "command": "parallel.openWebApp",
+        "title": "Parallel: Open Web App"
+      },
+      {
+        "command": "parallel.insertContextSummary",
+        "title": "Parallel: Insert Context Summary"
+      },
+      {
+        "command": "parallel.openDetails",
+        "title": "Parallel: Open Details"
+      },
+      {
+        "command": "parallel.search.prompt",
+        "title": "Parallel: Search"
+      },
+      {
+        "command": "parallel.refreshContext",
+        "title": "Parallel: Refresh Context"
+      },
+      {
+        "command": "parallel.agent.open",
+        "title": "Parallel: Open Agent"
+      },
+      {
+        "command": "parallel.toggleFullPermission",
+        "title": "Parallel: Toggle Full Permission"
+      },
+      {
+        "command": "parallel.agent.undo",
+        "title": "Parallel: Undo Last Agent Edit"
+      },
+      {
+        "command": "parallel.indexWorkspace",
+        "title": "Parallel: Index Workspace for AI"
+      },
+      {
+        "command": "parallel.explainSelection",
+        "title": "Parallel: Explain Selection"
+      },
+      {
+        "command": "parallel.generateTests",
+        "title": "Parallel: Generate Tests"
+      },
+      {
+        "command": "parallel.chat.askSelection",
+        "title": "Parallel: Ask Assistant About Selection"
+      },
+      {
+        "command": "parallel.inlineCompletions.showAlternatives",
+        "title": "Parallel: Show Inline Completion Alternatives"
+      },
+      {
+        "command": "parallel.cycleCompletionNext",
+        "title": "Parallel: Next Inline Completion"
+      },
+      {
+        "command": "parallel.cycleCompletionPrevious",
+        "title": "Parallel: Previous Inline Completion"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "editor.action.inlineSuggest.commit",
+        "key": "tab",
+        "when": "inlineSuggestionVisible && !editorHasSelection"
+      },
+      {
+        "command": "editor.action.inlineSuggest.acceptNextWord",
+        "key": "alt+right",
+        "when": "inlineSuggestionVisible"
+      },
+      {
+        "command": "editor.action.inlineSuggest.acceptNextLine",
+        "key": "alt+down",
+        "when": "inlineSuggestionVisible"
+      },
+      {
+        "command": "parallel.cycleCompletionNext",
+        "key": "alt+]",
+        "when": "inlineSuggestionVisible"
+      },
+      {
+        "command": "parallel.cycleCompletionPrevious",
+        "key": "alt+[",
+        "when": "inlineSuggestionVisible"
+      },
+      {
+        "command": "parallel.inlineCompletions.showAlternatives",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "inlineSuggestionVisible"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "parallel",
+          "title": "Parallel",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "parallel": [
+        {
+          "id": "parallelChatView",
+          "name": "Chat",
+          "type": "webview"
+        },
+        {
+          "id": "parallelSearchView",
+          "name": "Search"
+        }
+      ]
+    },
+    "configuration": {
+      "type": "object",
+      "title": "Parallel",
+      "properties": {
+        "parallel.apiBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "Parallel API base URL (e.g., http://localhost:8000)."
+        },
+        "parallel.webBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:5173",
+          "description": "Parallel web app base URL (used for OAuth and UI links)."
+        },
+        "parallel.requestTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "description": "HTTP request timeout in milliseconds."
+        },
+        "parallel.sync.requestTimeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "description": "HTTP request timeout for sync calls in milliseconds."
+        },
+        "parallel.sync.pageSize": {
+          "type": "number",
+          "default": 200,
+          "description": "Number of items to request per sync page (1-500)."
+        },
+        "parallel.streamResponses": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable streaming chat responses (SSE/NDJSON) if supported by the backend."
+        },
+        "parallel.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "Legacy server URL setting (deprecated). Use parallel.apiBaseUrl.",
+          "deprecationMessage": "Deprecated. Use parallel.apiBaseUrl."
+        },
+        "parallel.token": {
+          "type": "string",
+          "default": "",
+          "description": "Legacy token setting (deprecated). Use Sign In and Secret Storage.",
+          "deprecationMessage": "Deprecated. Use Sign In; tokens are stored in Secret Storage."
+        },
+        "parallel.webAppUrl": {
+          "type": "string",
+          "default": "http://localhost:5174",
+          "description": "Legacy web app URL setting (deprecated). Use parallel.webBaseUrl.",
+          "deprecationMessage": "Deprecated. Use parallel.webBaseUrl."
+        },
+        "parallel.workspaceId": {
+          "type": "string",
+          "default": "",
+          "description": "Selected workspace ID (managed by command)."
+        },
+        "parallel.sync.intervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "description": "Background incremental sync interval in seconds."
+        },
+        "parallel.sse.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable realtime SSE updates."
+        },
+        "parallel.completion.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable inline completion powered by a configurable HTTP endpoint."
+        },
+        "parallel.completion.endpoint": {
+          "type": "string",
+          "default": "",
+          "description": "HTTP endpoint for inline completions."
+        },
+        "parallel.completion.maxSuggestions": {
+          "type": "number",
+          "default": 3,
+          "description": "Maximum number of inline completion suggestions."
+        },
+        "parallel.completion.minPrefixChars": {
+          "type": "number",
+          "default": 8,
+          "description": "Minimum non-whitespace prefix length before requesting completions."
+        },
+        "parallel.completion.maxPrefixChars": {
+          "type": "number",
+          "default": 4000,
+          "description": "Maximum prefix characters to send for completions."
+        },
+        "parallel.completion.maxSuffixChars": {
+          "type": "number",
+          "default": 2000,
+          "description": "Maximum suffix characters to send for completions."
+        },
+        "parallel.completion.debounceMs": {
+          "type": "number",
+          "default": 120,
+          "description": "Debounce (ms) between inline completion requests."
+        },
+        "parallel.completion.autoTrigger": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically trigger inline completions on idle or delimiter input."
+        },
+        "parallel.completion.autoTriggerDelayMs": {
+          "type": "number",
+          "default": 180,
+          "description": "Delay (ms) before auto-triggering inline completions after typing."
+        },
+        "parallel.completion.stream": {
+          "type": "boolean",
+          "default": false,
+          "description": "Stream inline completion tokens when supported by the backend."
+        },
+        "parallel.completion.progressiveThrottleMs": {
+          "type": "number",
+          "default": 60,
+          "description": "Throttle (ms) for progressive inline completion updates."
+        },
+        "parallel.agent.planBeforePropose": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run a planning step to select files before proposing edits."
+        },
+        "parallel.agent.fullRepoContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include a larger slice of repository files in agent prompts."
+        },
+        "parallel.agent.fullRepoMaxFiles": {
+          "type": "number",
+          "default": 500,
+          "description": "Maximum number of repository files to include when full repo context is enabled."
+        },
+        "parallel.agent.streamProposals": {
+          "type": "boolean",
+          "default": false,
+          "description": "Stream proposal responses when supported by the backend."
+        },
+        "parallel.agent.autoIterate": {
+          "type": "boolean",
+          "default": false,
+          "description": "After running suggested commands, re-run the agent to refine edits."
+        },
+        "parallel.agent.maxIterations": {
+          "type": "number",
+          "default": 2,
+          "description": "Maximum auto-iteration cycles when auto-iterate is enabled."
+        },
+        "parallel.agent.rollbackOnFailure": {
+          "type": "boolean",
+          "default": true,
+          "description": "Rollback applied edits if any file fails to apply."
+        },
+        "parallel.indexing.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable background semantic indexing of the workspace."
+        },
+        "parallel.indexing.useSemanticContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include semantic code search results in prompts."
+        },
+        "parallel.terminal.capture": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send AI-run terminal output to the backend for context."
+        },
+        "parallel.logging.level": {
+          "type": "string",
+          "enum": [
+            "info",
+            "debug"
+          ],
+          "default": "info",
+          "description": "Logging verbosity for the Parallel extension."
+        },
+        "parallel.dev.mockBackend": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable mock backend for local verification (no server required)."
+        },
+        "parallel.cache.maxEntitiesPerType": {
+          "type": "number",
+          "default": 1000,
+          "description": "Maximum entities retained per entity_type in the local cache (set 0 or negative to disable pruning)."
+        }
+      }
+    }
+  }
+}
