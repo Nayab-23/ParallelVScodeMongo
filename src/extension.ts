@@ -125,6 +125,7 @@ let inboxPollTimer: NodeJS.Timeout | null = null;
 let inboxPollInFlight = false;
 let deviceIdCache: string | null = null;
 let repoMetadataCache: { workspaceRoot: string; repoRoot: string; repoId: string } | null = null;
+let demoModeActive = false;
 type EditHistoryEntry = {
   id: string;
   workspaceId: string;
@@ -673,6 +674,7 @@ async function signOut(
   await context.globalState.update(OAUTH_PENDING_KEY, undefined);
   store.setActiveWorkspace(null);
   client.setToken(undefined);
+  demoModeActive = false;
   realtimeClient?.stop();
   realtimeClient = null;
   mockStreamStop?.();
@@ -867,7 +869,7 @@ async function signInWithMock(
     apiBaseUrl,
     'mock-token',
     bootstrap,
-    { storeToken: false, authFingerprint: 'mock' }
+    { storeToken: false, authFingerprint: 'mock', modeLabel: ' (mock backend)' }
   );
 }
 
@@ -883,7 +885,10 @@ async function signInWithDemo(
   const demoToken = 'demo-token';
   client.setApiBaseUrl(apiBaseUrl);
   client.setToken(demoToken);
-  const bootstrap = await fetchBootstrap(client);
+  const { bootstrap, url, requestId } = await fetchDemoBootstrap(client);
+  const requestLog = requestId ? ` [req:${requestId}]` : '';
+  logger.info(`[Demo] bootstrap ok ${url}${requestLog}`);
+  demoModeActive = true;
   await finalizeSignIn(
     context,
     client,
@@ -894,8 +899,23 @@ async function signInWithDemo(
     apiBaseUrl,
     demoToken,
     bootstrap,
-    { authFingerprint: 'demo' }
+    { authFingerprint: 'demo', storeToken: false, modeLabel: ' (demo mode)' }
   );
+}
+
+type DemoBootstrapResult = {
+  bootstrap: BootstrapResponse;
+  url: string;
+  requestId?: string;
+};
+
+async function fetchDemoBootstrap(client: ParallelClient): Promise<DemoBootstrapResult> {
+  const path = '/api/v1/bootstrap';
+  const response = await client.requestStream(path, { method: 'GET' });
+  const url = response.url;
+  const requestId = response.headers.get('X-Request-Id') ?? undefined;
+  const bootstrap = (await response.json()) as BootstrapResponse;
+  return { bootstrap, url, requestId };
 }
 
 async function manualTokenSignIn(
@@ -1055,7 +1075,12 @@ async function finalizeSignIn(
   apiBaseUrl: string,
   token: string,
   bootstrap: BootstrapResponse,
-  options?: { refreshToken?: string; storeToken?: boolean; authFingerprint?: string }
+  options?: {
+    refreshToken?: string;
+    storeToken?: boolean;
+    authFingerprint?: string;
+    modeLabel?: string;
+  }
 ): Promise<void> {
   const shouldStore = options?.storeToken !== false;
   if (shouldStore) {
@@ -1070,7 +1095,8 @@ async function finalizeSignIn(
   await context.globalState.update(BOOTSTRAP_KEY, bootstrap);
   await vscode.workspace.getConfiguration().update(API_BASE_URL_KEY, apiBaseUrl, true);
   const userLabel = bootstrap.user.name ?? bootstrap.user.id;
-  const modeLabel = options?.storeToken === false ? ' (mock backend)' : '';
+  const modeLabel =
+    options?.modeLabel ?? (options?.storeToken === false ? ' (mock backend)' : '');
   vscode.window.showInformationMessage(`Signed in as ${userLabel}${modeLabel}`);
   logger.info('Sign-in complete');
   logger.audit('Sign-in completed');
@@ -1092,23 +1118,24 @@ async function selectWorkspace(
   options?: { forcePrompt?: boolean }
 ): Promise<void> {
   const mockEnabled = isMockEnabled();
-  if (!bootstrapCache) {
-    if (mockEnabled) {
-      bootstrapCache = ensureMockBackend()?.bootstrap() ?? null;
-    } else {
-      const pat = await readPat(context);
-      if (!pat) {
-        vscode.window.showErrorMessage('Please sign in first.');
-        return;
+    if (!bootstrapCache) {
+      if (mockEnabled) {
+        bootstrapCache = ensureMockBackend()?.bootstrap() ?? null;
+      } else {
+        const pat = await readPat(context);
+        if (!pat && !demoModeActive) {
+          vscode.window.showErrorMessage('Please sign in first.');
+          return;
+        }
+        const token = demoModeActive ? 'demo-token' : pat;
+        client.setToken(token);
+        client.setApiBaseUrl(readApiBaseUrl(context));
+        bootstrapCache = await fetchBootstrap(client);
       }
-      client.setToken(pat);
-      client.setApiBaseUrl(readApiBaseUrl(context));
-      bootstrapCache = await fetchBootstrap(client);
+      if (bootstrapCache) {
+        await context.globalState.update(BOOTSTRAP_KEY, bootstrapCache);
+      }
     }
-    if (bootstrapCache) {
-      await context.globalState.update(BOOTSTRAP_KEY, bootstrapCache);
-    }
-  }
   if (!bootstrapCache || !bootstrapCache.workspaces) {
     vscode.window.showErrorMessage('No workspaces available. Please sign in again.');
     return;
@@ -1167,11 +1194,12 @@ async function runInitialSync(
   }
   const pat = await readPat(context);
   const mockEnabled = isMockEnabled();
-  if (!pat && !mockEnabled) {
+  if (!pat && !mockEnabled && !demoModeActive) {
     vscode.window.showErrorMessage('Please sign in first.');
     return;
   }
-  client.setToken(mockEnabled ? 'mock-token' : (pat ?? undefined));
+  const token = mockEnabled ? 'mock-token' : demoModeActive ? 'demo-token' : pat;
+  client.setToken(token);
   client.setApiBaseUrl(readApiBaseUrl(context));
   const runner = syncService ?? new SyncService(client, store, logger);
   await runSync(context, runner, store, logger, true, viewRefresher);
@@ -1247,9 +1275,11 @@ async function startSyncLoop(
   }
   const mockEnabled = isMockEnabled();
   const pat = await readPat(context);
-  if (!pat && !mockEnabled) {
+  if (!pat && !mockEnabled && !demoModeActive) {
     return;
   }
+  const token = mockEnabled ? 'mock-token' : demoModeActive ? 'demo-token' : pat;
+  client.setToken(token);
   syncTimer = setInterval(() => {
     void runSync(context, syncService, store, logger, false, viewRefresher).catch((err) => {
       logger.error('Background sync failed', err as Error);
@@ -3409,7 +3439,7 @@ function updateStatusBar(status: string, workspaceId: string | null): void {
   if (!statusBarItem) {
     return;
   }
-  const authPart = isSignedIn ? 'Signed in' : 'Signed out';
+  const authPart = demoModeActive ? 'Connected (Demo)' : isSignedIn ? 'Signed in' : 'Signed out';
   const wsPart = workspaceId ? ` • ${workspaceId}` : '';
   const statusPart = status ? ` • ${status}` : '';
   statusBarItem.text = `Parallel: ${authPart}${wsPart}${statusPart}`;
