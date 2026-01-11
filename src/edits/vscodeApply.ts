@@ -66,7 +66,7 @@ async function applySingleEdit(edit: ProposedFileEdit, logger: Logger): Promise<
   const workspaceEdit = new vscode.WorkspaceEdit();
   const mode = edit.mode ?? 'replace';
   if (mode === 'delete') {
-    workspaceEdit.delete(uri, { ignoreIfNotExists: true });
+    workspaceEdit.deleteFile(uri, { ignoreIfNotExists: true });
     await vscode.workspace.applyEdit(workspaceEdit);
     await vscode.workspace.saveAll();
     return;

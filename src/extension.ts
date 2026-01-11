@@ -153,26 +153,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const logger = new Logger(outputChannel, getLoggingLevel());
 
   const apiBaseUrl = readApiBaseUrl(context);
-  let pat = await readPat(context);
-  const migratedToken = await migrateLegacyToken(context, pat);
-  if (!pat && migratedToken) {
-    pat = migratedToken;
+
+  // DEMO MODE: Get or prompt for demo user (alice/bob)
+  let demoUser = context.globalState.get<string>('parallel.demoUser');
+  if (!demoUser) {
+    const selected = await vscode.window.showQuickPick(['alice', 'bob'], {
+      placeHolder: 'Select demo user (Alice or Bob)',
+      canPickMany: false,
+    });
+    demoUser = selected || 'alice';
+    await context.globalState.update('parallel.demoUser', demoUser);
   }
-  isSignedIn = !!pat;
-  fullPermission = context.globalState.get<boolean>(FULL_PERMISSION_KEY) ?? false;
-  authFingerprint = pat ? hashToken(pat) : null;
-  permissionNeedsReconfirm = fullPermission;
+
+  // DEMO MODE: Use demo token, set signed in
+  const pat = 'demo-token';
+  isSignedIn = true;
+  demoModeActive = true;
+  fullPermission = true;
+  authFingerprint = null;
+  permissionNeedsReconfirm = false;
   deviceIdCache = context.globalState.get<string>(DEVICE_ID_KEY) ?? null;
   inboxProcessedTasks = context.globalState.get<string[]>(INBOX_PROCESSED_KEY) ?? [];
   inboxProcessedSet = new Set(inboxProcessedTasks);
   const store = new Store(context.globalStorageUri.fsPath, {
     maxEntitiesPerType: getCacheLimit(),
   });
-  const client = new ParallelClient(apiBaseUrl, pat ?? undefined, logger, {
+  const client = new ParallelClient(apiBaseUrl, pat, logger, {
     requestTimeoutMs: readRequestTimeoutMs(),
   });
   activeClient = client;
-  client.setRefreshHandler(() => refreshAccessToken(context, client, logger));
+  client.setDemoUser(demoUser);
   mockBackend = ensureMockBackend();
   let syncService = buildSyncService(client, store, logger);
   const detailsPanel = new DetailsPanel(context.extensionUri);
@@ -288,36 +298,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   context.subscriptions.push(
-    vscode.window.registerUriHandler(authHandler),
     sidebarProvider,
     outputChannel,
     statusBarItem,
-    vscode.commands.registerCommand('parallel.signIn', (options?: SignInOptions) =>
-      signIn(
-        context,
-        client,
-        store,
-        logger,
-        syncService,
-        chatSidebarProvider ?? undefined,
-        options
-      ).catch((err) => handleError(err, 'Sign in failed'))
-    ),
-    vscode.commands.registerCommand('parallel.signOut', () =>
-      signOut(context, client, store, logger, chatSidebarProvider ?? undefined).catch((err) =>
-        handleError(err, 'Sign out failed')
-      )
-    ),
-    vscode.commands.registerCommand('parallel.openProfileMenu', () =>
-      openProfileMenu(
-        context,
-        client,
-        store,
-        logger,
-        syncService,
-        chatSidebarProvider ?? undefined
-      ).catch((err) => handleError(err, 'Open profile menu failed'))
-    ),
+    vscode.commands.registerCommand('parallel.switchDemoUser', async () => {
+      const newUser = await vscode.window.showQuickPick(['alice', 'bob'], {
+        placeHolder: 'Switch to demo user',
+      });
+      if (newUser) {
+        await context.globalState.update('parallel.demoUser', newUser);
+        client.setDemoUser(newUser);
+        vscode.window.showInformationMessage(`Switched to ${newUser.toUpperCase()}`);
+        logger.info(`Demo user switched to ${newUser}`);
+      }
+    }),
     vscode.commands.registerCommand('parallel.selectWorkspace', () =>
       selectWorkspace(
         context,
@@ -462,8 +456,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   context.subscriptions.push({ dispose: disposeStore });
 
-  bootstrapCache = (context.globalState.get(BOOTSTRAP_KEY) as BootstrapResponse | null) ?? null;
-  const workspaceId = getWorkspaceId(context);
+  // DEMO MODE: Set workspace ID to "1" and create fake bootstrap
+  const workspaceId = '1';
+  await context.globalState.update(WORKSPACE_ID_KEY, workspaceId);
+  bootstrapCache = {
+    user: {
+      id: `demo-${demoUser}`,
+      name: demoUser === 'alice' ? 'Alice' : 'Bob',
+      email: `${demoUser}@demo.local`,
+    },
+    workspaces: [{ id: '1', name: 'Demo Workspace' }],
+  };
+  await context.globalState.update(BOOTSTRAP_KEY, bootstrapCache);
+
   if (workspaceId) {
     store.setActiveWorkspace(workspaceId);
     try {
@@ -471,11 +476,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     } catch (err) {
       logger.error('Failed to load local cache; resetting.', err as Error);
       await store.clearWorkspace(workspaceId);
-    }
-    const mockEnabled = isMockEnabled();
-    if (!pat && !mockEnabled) {
-      updateStatusBar('Disconnected', workspaceId);
-      return;
     }
     try {
       await runSync(context, syncService, store, logger, false, chatSidebarProvider ?? undefined);
@@ -1279,7 +1279,7 @@ async function startSyncLoop(
     return;
   }
   const token = mockEnabled ? 'mock-token' : demoModeActive ? 'demo-token' : pat;
-  client.setToken(token);
+  activeClient?.setToken(token);
   syncTimer = setInterval(() => {
     void runSync(context, syncService, store, logger, false, viewRefresher).catch((err) => {
       logger.error('Background sync failed', err as Error);
@@ -2084,10 +2084,11 @@ async function fetchInboxTasks(repoId: string, logger: Logger): Promise<InboxTas
     return [];
   }
   try {
-    const response = await activeClient.request<unknown>('/api/v1/extension/inbox', {
+    const demoUser = activeClient.getDemoUser();
+    const response = await activeClient.request<unknown>('/api/v1/extension/tasks', {
       method: 'GET',
       query: {
-        repo_id: repoId,
+        to_user_id: demoUser ? `demo-${demoUser}` : undefined,
         status: 'pending',
         limit: INBOX_POLL_LIMIT,
       },
@@ -3439,10 +3440,10 @@ function updateStatusBar(status: string, workspaceId: string | null): void {
   if (!statusBarItem) {
     return;
   }
-  const authPart = demoModeActive ? 'Connected (Demo)' : isSignedIn ? 'Signed in' : 'Signed out';
-  const wsPart = workspaceId ? ` • ${workspaceId}` : '';
+  const demoUser = activeClient?.getDemoUser();
+  const authPart = demoModeActive && demoUser ? `Demo: ${demoUser.toUpperCase()}` : isSignedIn ? 'Signed in' : 'Signed out';
   const statusPart = status ? ` • ${status}` : '';
-  statusBarItem.text = `Parallel: ${authPart}${wsPart}${statusPart}`;
+  statusBarItem.text = `Parallel: ${authPart}${statusPart}`;
   chatSidebarProvider?.refresh();
 }
 

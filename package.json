@@ -55,6 +55,7 @@
     "prepare": "npm run build"
   },
   "devDependencies": {
+    "@types/diff": "^7.0.2",
     "@types/eventsource": "^1.1.14",
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.83.0",

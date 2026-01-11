@@ -38,6 +38,8 @@ export class ParallelClient {
   private requestTimeoutMs: number;
   private maxRetries: number;
   private refreshHandler?: RefreshHandler;
+  // Demo identity header (e.g. 'alice' or 'bob') for hackathon demo mode
+  private demoUser?: string;
 
   constructor(
     apiBaseUrl: string,
@@ -54,6 +56,14 @@ export class ParallelClient {
     this.requestTimeoutMs = options?.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.refreshHandler = options?.refreshHandler;
+  }
+
+  setDemoUser(demoUser: string | undefined): void {
+    this.demoUser = demoUser ? demoUser.toLowerCase() : undefined;
+  }
+
+  getDemoUser(): string | undefined {
+    return this.demoUser;
   }
 
   setToken(token: string | undefined): void {
@@ -213,6 +223,10 @@ export class ParallelClient {
     };
     if (this.token) {
       headers.Authorization = `Bearer ${this.token}`;
+    }
+    // Include demo user header when set (no credentials, just an enum)
+    if (this.demoUser) {
+      headers['X-Demo-User'] = this.demoUser;
     }
     if (!headers['Content-Type'] && !headers['content-type']) {
       headers['Content-Type'] = 'application/json';

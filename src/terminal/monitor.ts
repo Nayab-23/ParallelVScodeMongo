@@ -39,8 +39,12 @@ export class TerminalMonitor {
         const exitCode = terminal.exitStatus?.code ?? -1;
         void this.flush(key, exitCode);
         this.buffers.delete(key);
-      }),
-      vscode.window.onDidWriteTerminalData((event) => {
+      })
+    );
+
+    // Conditionally add terminal data listener if API is available
+    if ('onDidWriteTerminalData' in vscode.window) {
+      const disposable = (vscode.window as any).onDidWriteTerminalData((event: any) => {
         if (!vscode.workspace.getConfiguration().get<boolean>('parallel.terminal.capture')) {
           return;
         }
@@ -53,7 +57,11 @@ export class TerminalMonitor {
           return;
         }
         this.scheduleFlush(key);
-      }),
+      });
+      context.subscriptions.push(disposable);
+    }
+
+    context.subscriptions.push(
       {
         dispose: () => {
           for (const buffer of this.buffers.values()) {

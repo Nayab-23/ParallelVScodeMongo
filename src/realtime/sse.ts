@@ -12,6 +12,7 @@ export interface RealtimeOptions {
   token: string;
   cursor?: string | null;
   lastEventId?: string | null;
+  demoUser?: string | undefined;
 }
 
 export class RealtimeClient {
@@ -78,6 +79,10 @@ export class RealtimeClient {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.options.token}`,
     };
+    // Include demo user header if provided so server can filter events
+    if (this.options.demoUser) {
+      headers['X-Demo-User'] = this.options.demoUser;
+    }
     if (this.lastEventId) {
       headers['Last-Event-ID'] = this.lastEventId;
     }
